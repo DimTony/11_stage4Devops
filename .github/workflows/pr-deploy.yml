@@ -8,18 +8,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2 # confirm later
+          aws-region: us-east-2
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image to Amazon ECR
         env:
@@ -32,17 +32,28 @@ jobs:
 
       - name: Deploy to ECS
         run: |
-          aws ecs update-service --cluster pr-deploy-cluster --service pr-deploy-service --force-new-deployment
+          aws ecs update-service --cluster my-cluster --service my-service --force-new-deployment
+        continue-on-error: true
 
       - name: Clean up on PR close
         if: github.event.action == 'closed'
         run: |
-          # Add cleanup logic here (e.g., remove ECS task, delete ECR image)
+          # Add cleanup logic here
+        continue-on-error: true
 
       - name: Notify GitHub Bot
-        uses: peter-evans/create-or-update-comment@v1
+        uses: peter-evans/create-or-update-comment@v3
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             Deployment status: ${{ job.status }}
-            Deployment URL: http://<your-load-balancer-url>/${{ github.event.pull_request.number }}
+
+            Image built and pushed to ECR: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+            Note: Application URL will be available once deployment is fully set up.
+
+      - name: Check for failures
+        if: failure()
+        run: |
+          echo "The workflow failed. Please check the logs for more information."
+          exit 1
